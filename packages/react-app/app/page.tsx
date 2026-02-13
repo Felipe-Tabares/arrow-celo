@@ -1,55 +1,30 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useWeb3 } from "@/contexts/useWeb3";
 import { farcasterMiniApp } from "@farcaster/miniapp-wagmi-connector";
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { isAddress } from "viem";
 import { useConnect, useDisconnect } from "wagmi";
 
-// Farcaster SDK integration
 let sdk: any = null;
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
-
-  const {
-    address,
-    isConnected,
-    chain,
-    needsChainSwitch,
-    sendCUSD,
-    ensureCorrectChain,
-    isCUSDLoading,
-    cUSDTxHash,
-    celoBalance,
-    cUSDBalance,
-  } = useWeb3();
-
+  const { address, isConnected, celoBalance, needsChainSwitch, ensureCorrectChain } = useWeb3();
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
-
   const [isFarcasterMiniapp, setIsFarcasterMiniapp] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [amountToSend, setAmountToSend] = useState<string>("0.1");
-  const [recipientAddress, setRecipientAddress] = useState<string>("");
 
-  // Handle SSR
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Initialize Farcaster SDK
   useEffect(() => {
     const initFarcasterSDK = async () => {
       try {
-        console.log("Initializing Farcaster SDK...");
-
-        // Check if we're in a Farcaster miniapp environment
         const url = new URL(window.location.href);
         const isMiniApp =
-          url.pathname.includes("/miniapp") ||
           url.searchParams.get("miniApp") === "true" ||
           window.navigator.userAgent.includes("Farcaster") ||
           window.navigator.userAgent.includes("Warpcast") ||
@@ -58,152 +33,157 @@ export default function Home() {
 
         setIsFarcasterMiniapp(isMiniApp);
 
-        // Initialize SDK
-        const { sdk: farcasterSDK } = await import("@farcaster/miniapp-sdk");
-        sdk = farcasterSDK;
-        sdk.actions.ready();
-
-        console.log("Farcaster SDK initialized");
+        if (isMiniApp) {
+          const { sdk: farcasterSDK } = await import("@farcaster/miniapp-sdk");
+          sdk = farcasterSDK;
+          sdk.actions.ready();
+        }
         setIsInitializing(false);
       } catch (error) {
-        console.log("Farcaster SDK not available:", error);
-        setTimeout(() => setIsInitializing(false), 2000);
+        setIsInitializing(false);
       }
     };
-
     initFarcasterSDK();
   }, []);
 
-  // Handle wallet connection - prioritize Farcaster wallet
-  const handleGetStarted = async () => {
-    try {
-      // If we're in a Farcaster miniapp, use the Farcaster connector
-      if (isFarcasterMiniapp) {
-        console.log("Connecting to Farcaster wallet...");
-        connect({ connector: farcasterMiniApp() });
-      } else {
-        // Otherwise, use the first available connector (should be Farcaster, then fallback to injected)
-        if (connectors.length > 0) {
-          console.log("Connecting to available wallet...");
-          connect({ connector: connectors[0] });
-        }
-      }
-    } catch (error) {
-      console.error("Error connecting wallet:", error);
-    }
-  };
-
-  // Handle send cUSD
-  const handleSendCUSD = async () => {
-    if (!address) return;
-
-    // Use recipient address if provided, otherwise send to self for testing
-    const toAddress = recipientAddress.trim() || address;
-
-    try {
-      await ensureCorrectChain();
-      await sendCUSD(toAddress, amountToSend);
-    } catch (error) {
-      console.error("Error sending cUSD:", error);
-    }
-  };
-
-  // Format balance for display
   const formatBalance = (balance: string) => {
     const num = parseFloat(balance);
     if (num === 0) return "0.00";
-    if (num < 0.001) return "< 0.001";
-    return num.toFixed(3);
+    return num.toFixed(4);
   };
 
-  // Validate recipient address
-  const isValidRecipient =
-    recipientAddress.trim() === "" || isAddress(recipientAddress.trim());
-  const recipientToShow = recipientAddress.trim() || address;
-
-  // Prevent SSR issues with wagmi hooks
   if (!mounted) {
-    return <div className="p-4">Loading...</div>;
+    return <div className="min-h-screen bg-[#0a0a0f]" />;
   }
 
-  // Show loading screen while initializing
   if (isInitializing) {
     return (
-      <div className="p-4">
-        <div className="text-center py-8">
-          <p className="text-gray-600">Initializing...</p>
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="text-center">
+          <div className="relative w-20 h-20 mx-auto mb-4">
+            <div className="absolute inset-0 rounded-full border-4 border-amber-500/20" />
+            <div className="absolute inset-2 rounded-full border-4 border-amber-500/40" />
+            <div className="absolute inset-4 rounded-full border-4 border-amber-500/60" />
+            <div className="absolute inset-6 rounded-full bg-amber-500 animate-pulse" />
+          </div>
+          <p className="text-gray-500 text-sm">Loading...</p>
         </div>
       </div>
     );
   }
 
-  // Show connection screen if not connected
+  // Not connected - Landing page
   if (!isConnected) {
     return (
-      <div className="p-4">
-        <div className="text-center py-8">
-          <h1 className="text-xl font-semibold text-black mb-4">
-            Farcaster × Celo
+      <div className="min-h-screen bg-[#0a0a0f] flex flex-col">
+        {/* Hero Section */}
+        <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
+          {/* Animated Target Logo */}
+          <div className="relative w-32 h-32 mb-6">
+            <div className="absolute inset-0 rounded-full border-[3px] border-red-500/30 animate-pulse" />
+            <div className="absolute inset-3 rounded-full border-[3px] border-red-500/50" />
+            <div className="absolute inset-6 rounded-full border-[3px] border-red-500/70" />
+            <div className="absolute inset-9 rounded-full border-[3px] border-amber-500/80" />
+            <div className="absolute inset-12 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 shadow-lg shadow-amber-500/30" />
+            {/* Arrow */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-3xl animate-bounce">
+              🎯
+            </div>
+          </div>
+
+          <h1 className="text-4xl font-black text-white tracking-tight mb-2">
+            ARROW
           </h1>
-          <p className="text-gray-600 mb-8">
-            Connect your wallet to get started
+          <p className="text-amber-500 font-semibold text-lg mb-1">
+            Shoot • Hit • Win
           </p>
-          <Button
-            title="Get Started"
-            onClick={handleGetStarted}
-            className="w-full bg-black text-white hover:bg-gray-800"
-          />
+          <p className="text-gray-500 text-sm mb-8">
+            On-chain betting on Celo
+          </p>
+
+          {/* Payout Info Cards */}
+          <div className="w-full max-w-xs mb-8">
+            <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl p-4 border border-gray-700/50">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="bg-green-500/10 rounded-xl p-3 border border-green-500/20">
+                  <div className="text-2xl mb-1">🎯</div>
+                  <div className="text-green-400 font-bold text-lg">1.9x</div>
+                  <div className="text-gray-500 text-xs">Bullseye</div>
+                </div>
+                <div className="bg-amber-500/10 rounded-xl p-3 border border-amber-500/20">
+                  <div className="text-2xl mb-1">⭕</div>
+                  <div className="text-amber-400 font-bold text-lg">0.5x</div>
+                  <div className="text-gray-500 text-xs">Ring</div>
+                </div>
+                <div className="bg-red-500/10 rounded-xl p-3 border border-red-500/20">
+                  <div className="text-2xl mb-1">💨</div>
+                  <div className="text-red-400 font-bold text-lg">0x</div>
+                  <div className="text-gray-500 text-xs">Miss</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Connect Buttons */}
+          <div className="w-full max-w-xs space-y-3">
+            {!isFarcasterMiniapp ? (
+              <>
+                {connectors.filter(c => c.id !== 'farcasterMiniApp').map((connector) => (
+                  <button
+                    key={connector.id}
+                    onClick={() => connect({ connector })}
+                    className="w-full py-4 px-6 rounded-2xl font-bold text-lg transition-all duration-200 active:scale-[0.98] bg-gradient-to-r from-amber-500 to-amber-600 text-black shadow-lg shadow-amber-500/25 hover:shadow-amber-500/40"
+                  >
+                    Connect {connector.name === 'WalletConnect' ? 'Wallet' : connector.name}
+                  </button>
+                ))}
+              </>
+            ) : (
+              <button
+                onClick={() => connect({ connector: farcasterMiniApp() })}
+                className="w-full py-4 px-6 rounded-2xl font-bold text-lg transition-all duration-200 active:scale-[0.98] bg-gradient-to-r from-amber-500 to-amber-600 text-black shadow-lg shadow-amber-500/25"
+              >
+                Connect Wallet
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 text-center">
+          <p className="text-gray-600 text-xs">
+            Built on Celo • Farcaster Mini App
+          </p>
         </div>
       </div>
     );
   }
 
+  // Connected - Game Menu
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-[#0a0a0f] flex flex-col">
       {/* Header */}
-      <div className="border-b border-gray-200 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-black">Farcaster × Celo</span>
+      <div className="px-4 py-3 flex items-center justify-between border-b border-gray-800/50">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+            <span className="text-sm">🎯</span>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-500">Connected</p>
-            <p className="font-mono text-xs text-black">
-              {address?.substring(0, 6)}...
-              {address?.substring(address.length - 4)}
-            </p>
-          </div>
+          <span className="font-bold text-white">ARROW</span>
+        </div>
+        <div className="text-right">
+          <p className="text-gray-500 text-[10px] uppercase tracking-wider">Balance</p>
+          <p className="text-white font-mono font-bold">{formatBalance(celoBalance)} <span className="text-amber-500">CELO</span></p>
         </div>
       </div>
 
-      {/* Balance Section */}
-      <div className="border-b border-gray-200 px-4 py-3 bg-gray-50">
-        <div className="flex justify-between items-center">
-          <div className="flex-1">
-            <p className="text-xs text-gray-500 mb-1">CELO Balance</p>
-            <p className="font-semibold text-black">
-              {formatBalance(celoBalance)}
-            </p>
-          </div>
-          <div className="flex-1 text-right">
-            <p className="text-xs text-gray-500 mb-1">cUSD Balance</p>
-            <p className="font-semibold text-black">
-              {formatBalance(cUSDBalance)}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Chain Switch Banner */}
+      {/* Chain Warning */}
       {needsChainSwitch && (
-        <div className="border-b border-gray-200 px-4 py-3 bg-gray-50">
+        <div className="mx-4 mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-black">
-              Switch to Celo Alfajores to continue
-            </p>
+            <p className="text-amber-200 text-sm font-medium">Switch to Celo Network</p>
             <button
               onClick={ensureCorrectChain}
-              className="text-xs bg-black text-white px-3 py-1 rounded hover:bg-gray-800"
+              className="px-4 py-1.5 bg-amber-500 text-black text-sm font-bold rounded-lg"
             >
               Switch
             </button>
@@ -211,96 +191,65 @@ export default function Home() {
         </div>
       )}
 
-      {/* Content */}
-      <div className="p-4">
-        {/* Transaction Success Banner */}
-        {cUSDTxHash && (
-          <div className="mb-4 p-3 border border-gray-200 rounded">
-            <p className="font-medium text-black mb-1">
-              Transaction Completed!
-            </p>
-            <a
-              href={`https://alfajores.celoscan.io/tx/${cUSDTxHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm underline text-gray-600 hover:text-black"
-            >
-              View on Explorer
-            </a>
-          </div>
-        )}
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
+        {/* Target Animation */}
+        <div className="relative w-40 h-40 mb-8">
+          <div className="absolute inset-0 rounded-full border-4 border-red-500/20" />
+          <div className="absolute inset-4 rounded-full border-4 border-red-500/40" />
+          <div className="absolute inset-8 rounded-full border-4 border-red-500/60" />
+          <div className="absolute inset-12 rounded-full border-4 border-amber-500/80" />
+          <div className="absolute inset-16 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 shadow-lg shadow-amber-500/50" />
+          {/* Pulsing glow */}
+          <div className="absolute inset-0 rounded-full bg-amber-500/10 animate-ping" />
+        </div>
 
-        {/* Send Section */}
-        <div className="space-y-6">
-          <div className="text-center py-4">
-            <h2 className="text-xl font-semibold text-black mb-2">Send cUSD</h2>
-            <p className="text-gray-600">Transfer Celo stablecoins</p>
-          </div>
+        <h2 className="text-2xl font-bold text-white mb-2">Ready to Play?</h2>
+        <p className="text-gray-400 text-center mb-8 max-w-[250px]">
+          Bet micro amounts of CELO and test your luck!
+        </p>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-black mb-2">
-                Recipient Address
-              </label>
-              <Input
-                type="text"
-                value={recipientAddress}
-                onChange={(e) => setRecipientAddress(e.target.value)}
-                placeholder="0x... (leave empty to send to yourself)"
-                className={`w-full ${
-                  !isValidRecipient ? "border-red-300" : "border-gray-300"
-                }`}
-              />
-              {!isValidRecipient && (
-                <p className="text-xs text-red-600 mt-1">
-                  Please enter a valid Ethereum address
-                </p>
-              )}
-              {recipientToShow && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Sending to: {recipientToShow.substring(0, 6)}...
-                  {recipientToShow.substring(recipientToShow.length - 4)}
-                </p>
-              )}
+        {/* Play Button */}
+        <Link href="/game" className="w-full max-w-xs">
+          <button className="w-full py-5 px-6 rounded-2xl font-bold text-xl transition-all duration-200 active:scale-[0.98] bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/25 hover:shadow-green-500/40 flex items-center justify-center gap-3">
+            <span className="text-2xl">🏹</span>
+            Play Now
+          </button>
+        </Link>
+
+        {/* Game Info */}
+        <div className="w-full max-w-xs mt-8">
+          <div className="bg-gray-900/50 rounded-2xl p-4 border border-gray-800">
+            <h3 className="text-gray-400 text-xs uppercase tracking-wider mb-3">How It Works</h3>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500 font-bold text-sm">1</div>
+                <p className="text-gray-300 text-sm">Choose your bet (0.0005 - 0.005 CELO)</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500 font-bold text-sm">2</div>
+                <p className="text-gray-300 text-sm">Shoot your arrow at the target</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500 font-bold text-sm">3</div>
+                <p className="text-gray-300 text-sm">Hit the bullseye, win 1.9x!</p>
+              </div>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-black mb-2">
-                Amount to Send
-              </label>
-              <Input
-                type="number"
-                value={amountToSend}
-                onChange={(e) => setAmountToSend(e.target.value)}
-                placeholder="0.0"
-                className="w-full border-gray-300"
-              />
-            </div>
-
-            <Button
-              title={isCUSDLoading ? "Sending..." : `Send ${amountToSend} cUSD`}
-              onClick={handleSendCUSD}
-              disabled={
-                isCUSDLoading ||
-                needsChainSwitch ||
-                !isValidRecipient ||
-                !amountToSend
-              }
-              className="w-full bg-black text-white hover:bg-gray-800 disabled:opacity-50"
-            />
-          </div>
-
-          <div className="text-center">
-            <a
-              href="https://faucet.celo.org/alfajores"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm underline text-gray-600 hover:text-black"
-            >
-              Need test tokens? Get them from the faucet
-            </a>
           </div>
         </div>
+      </div>
+
+      {/* Footer */}
+      <div className="px-6 py-4 flex items-center justify-between border-t border-gray-800/50">
+        <p className="text-gray-600 text-xs font-mono">
+          {address?.slice(0, 6)}...{address?.slice(-4)}
+        </p>
+        <button
+          onClick={() => disconnect()}
+          className="text-gray-500 text-xs hover:text-red-400 transition-colors"
+        >
+          Disconnect
+        </button>
       </div>
     </div>
   );

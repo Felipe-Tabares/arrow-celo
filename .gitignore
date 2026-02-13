@@ -2,6 +2,10 @@ node_modules
 .env
 packages/*/.env
 
+# Claude Code temp files
+tmpclaude-*
+**/tmpclaude-*
+
 # IntelliJ project files
 *.iml
 *.ipr

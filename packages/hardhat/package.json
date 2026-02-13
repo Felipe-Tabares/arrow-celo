@@ -35,6 +35,9 @@
     "clean": "hardhat clean",
     "run:node": "hardhat node",
     "test": "hardhat test",
-    "prettier": "prettier --write 'contracts/**/*.sol' '**/*.ts'"
+    "prettier": "prettier --write 'contracts/**/*.sol' '**/*.ts'",
+    "deploy:testnet": "hardhat ignition deploy ignition/modules/ArrowGame.ts --network alfajores",
+    "deploy:mainnet": "hardhat ignition deploy ignition/modules/ArrowGame.ts --network celo",
+    "verify:mainnet": "hardhat verify --network celo"
   }
 }

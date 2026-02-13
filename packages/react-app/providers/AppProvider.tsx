@@ -3,22 +3,39 @@
 import { farcasterMiniApp } from "@farcaster/miniapp-wagmi-connector";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, createConfig, http } from "wagmi";
-import { celoAlfajores } from "wagmi/chains";
-import { injected } from "wagmi/connectors";
+import { celo, celoAlfajores } from "wagmi/chains";
+import { injected, walletConnect } from "wagmi/connectors";
 
 import Layout from "../components/Layout";
+
+const projectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID || "";
 
 // Create connectors - prioritize Farcaster wallet in miniapp environment
 const connectors = [
   farcasterMiniApp(), // Farcaster wallet (first priority when in miniapp)
-  injected(), // Fallback to injected wallet (MetaMask, etc.)
+  walletConnect({ projectId, showQrModal: true }), // WalletConnect for multi-wallet support
+  injected({ target: "metaMask" }), // MetaMask specifically
 ];
+
+// Custom Alfajores config with working RPC
+const alfajoresWithRpc = {
+  ...celoAlfajores,
+  rpcUrls: {
+    default: {
+      http: ["https://alfajores-forno.celo-testnet.org"],
+    },
+    public: {
+      http: ["https://alfajores-forno.celo-testnet.org"],
+    },
+  },
+};
 
 const config = createConfig({
   connectors,
-  chains: [celoAlfajores],
+  chains: [celo, alfajoresWithRpc],
   transports: {
-    [celoAlfajores.id]: http(),
+    [celo.id]: http("https://forno.celo.org"),
+    [alfajoresWithRpc.id]: http("https://alfajores-forno.celo-testnet.org"),
   },
 });
 

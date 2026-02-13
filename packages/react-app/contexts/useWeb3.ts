@@ -1,5 +1,5 @@
 import { formatEther, parseEther } from "viem";
-import { celoAlfajores } from "viem/chains";
+import { celo } from "viem/chains";
 import {
   useAccount,
   useBalance,
@@ -10,9 +10,9 @@ import {
 } from "wagmi";
 import StableTokenABI from "./cusd-abi.json";
 
-const cUSDTokenAddress = "0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1"; // Testnet
+// Using Celo Mainnet for hackathon
+const cUSDTokenAddress = "0x765de816845861e75a25fca122bb6898b8b1282a"; // Mainnet cUSD
 const CELO_TOKEN_ADDRESS = "0x471EcE3750Da237f93B8E339c536989b8978a438"; // Mainnet CELO
-const CUSD_TOKEN_ADDRESS = "0x765de816845861e75a25fca122bb6898b8b1282a"; // Mainnet cUSD
 
 export const useWeb3 = () => {
   const { address, isConnected, chain } = useAccount();
@@ -24,8 +24,8 @@ export const useWeb3 = () => {
     hash: cUSDTxHash,
   });
 
-  // Check if we need to switch chains
-  const needsChainSwitch = chain?.id !== celoAlfajores.id;
+  // Check if we need to switch chains - now using Celo Mainnet
+  const needsChainSwitch = chain?.id !== celo.id;
 
   // Get native CELO balance
   const { data: celoBalance, refetch: refetchCeloBalance } = useBalance({
@@ -50,7 +50,7 @@ export const useWeb3 = () => {
 
   const sendCUSD = async (to: string, amount: string) => {
     if (needsChainSwitch) {
-      await switchChain({ chainId: celoAlfajores.id });
+      await switchChain({ chainId: celo.id });
     }
 
     const amountInWei = parseEther(amount);
@@ -73,7 +73,7 @@ export const useWeb3 = () => {
 
   const ensureCorrectChain = async () => {
     if (needsChainSwitch) {
-      await switchChain({ chainId: celoAlfajores.id });
+      await switchChain({ chainId: celo.id });
     }
   };
 
