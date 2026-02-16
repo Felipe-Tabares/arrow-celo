@@ -1,35 +1,20 @@
 {
-  "name": "celo-composer-farcaster-template",
+  "name": "arrow-celo",
   "version": "1.0.0",
-  "description": "Celo Composer template for building Farcaster Frames with integrated Celo blockchain functionality.",
+  "description": "Arrow - On-chain archery betting game on Celo blockchain for Farcaster.",
   "private": true,
-  "author": "Celo",
   "license": "MIT",
   "scripts": {
-    "react-app:dev": "yarn workspace @celo-composer-farcaster-template/react-app dev",
-    "react-app:build": "yarn workspace @celo-composer-farcaster-template/react-app build",
-    "react-app:start": "yarn workspace @celo-composer-farcaster-template/react-app start",
-    "react-app:lint": "yarn workspace @celo-composer-farcaster-template/react-app lint"
+    "react-app:dev": "npm --prefix packages/react-app run dev",
+    "react-app:build": "npm --prefix packages/react-app run build",
+    "react-app:start": "npm --prefix packages/react-app run start",
+    "react-app:lint": "npm --prefix packages/react-app run lint"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/celo-org/celo-composer.git"
-  },
-  "bugs": {
-    "url": "https://github.com/celo-org/celo-composer/issues"
-  },
-  "homepage": "https://github.com/celo-org/celo-composer/blob/main/README.md",
-  "workspaces": [
-    "packages/*",
-    "hardhat/*"
-  ],
   "keywords": [
-    "celo-composer",
+    "arrow",
     "celo",
     "farcaster",
-    "frames",
-    "social",
+    "games",
     "web3"
-  ],
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+  ]
 }

@@ -23,11 +23,13 @@ type GameResult = {
 
 type GameState = "idle" | "drawing" | "flying" | "result";
 
-type ArrowLanding = {
+type ArrowLandingData = {
   x: number;  // -50 to 50 (percentage from center)
   y: number;  // -50 to 50 (percentage from center)
   zone: "bullseye" | "inner" | "outer" | "miss" | "short" | "overshoot";
-} | null;
+};
+
+type ArrowLanding = ArrowLandingData | null;
 
 const POWER_ZONES = {
   TOO_WEAK: { min: 0, max: 25 },
@@ -54,8 +56,25 @@ export default function GamePage() {
 
   const powerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { writeContract, data: txHash, isPending, reset } = useWriteContract();
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const { writeContract, data: txHash, isPending, reset, error: writeError } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+
+  // Handle contract errors
+  useEffect(() => {
+    if (writeError) {
+      const msg = writeError.message || "";
+      if (msg.includes("BetTooSmall")) setErrorMsg("Bet is below minimum (0.0005 CELO)");
+      else if (msg.includes("BetTooLarge")) setErrorMsg("Bet exceeds maximum (0.005 CELO)");
+      else if (msg.includes("InsufficientHouseBalance")) setErrorMsg("House has insufficient funds. Try a smaller bet.");
+      else if (msg.includes("User rejected") || msg.includes("denied")) setErrorMsg("Transaction cancelled");
+      else setErrorMsg("Transaction failed. Please try again.");
+      setGameState("idle");
+      const timer = setTimeout(() => setErrorMsg(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [writeError]);
 
   const { data: playerStats, refetch: refetchStats } = useReadContract({
     address: ARROW_GAME_ADDRESS,
@@ -69,7 +88,7 @@ export default function GamePage() {
     address: ARROW_GAME_ADDRESS,
     abi: ArrowGameABI.abi,
     eventName: "BetRevealed",
-    onLogs(logs) {
+    onLogs(logs: any[]) {
       const log = logs[0];
       if (log && log.args) {
         const { result, payout, amount } = log.args as { result: number; payout: bigint; amount: bigint };
@@ -93,7 +112,7 @@ export default function GamePage() {
   const generateLandingPosition = (result: number): ArrowLanding => {
     const angle = Math.random() * Math.PI * 2; // Random angle
     let distance: number;
-    let zone: ArrowLanding["zone"];
+    let zone: ArrowLandingData["zone"];
 
     if (result === 2) {
       // Bullseye - within center 15%
@@ -159,7 +178,7 @@ export default function GamePage() {
 
     // Determine result based on distance
     let result: number;
-    let zone: ArrowLanding["zone"];
+    let zone: ArrowLandingData["zone"];
 
     if (baseDistance < 12) {
       result = 2; // Bullseye
@@ -208,6 +227,7 @@ export default function GamePage() {
   const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
     if (gameState !== "idle" || isPending || isConfirming) return;
+    setErrorMsg(null);
     setIsHolding(true);
     setGameState("drawing");
     setPower(0);
@@ -267,6 +287,15 @@ export default function GamePage() {
 
   const executeBet = async (preCalculatedResult: number, landing: ArrowLanding) => {
     if (!address) return;
+
+    // Validate balance before sending tx
+    if (IS_CONTRACT_DEPLOYED && parseFloat(celoBalance) < parseFloat(betAmount)) {
+      setErrorMsg("Insufficient CELO balance");
+      setGameState("idle");
+      setTimeout(() => setErrorMsg(null), 5000);
+      return;
+    }
+
     try {
       await ensureCorrectChain();
       reset();
@@ -297,6 +326,7 @@ export default function GamePage() {
   const playAgain = () => {
     setGameState("idle");
     setLastResult(null);
+    setErrorMsg(null);
     setPower(0);
     setShotPower(0);
     setArrowLanding(null);
@@ -333,7 +363,7 @@ export default function GamePage() {
   return (
     <div className="min-h-screen bg-[#0d1117] flex flex-col select-none">
       {/* Header */}
-      <div className="px-4 py-3 flex items-center justify-between border-b border-gray-800/50">
+      <div className="px-4 py-3 flex items-center justify-between border-b border-gray-800/50" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
         <Link href="/" className="flex items-center gap-2">
           <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -349,6 +379,20 @@ export default function GamePage() {
       {!IS_CONTRACT_DEPLOYED && (
         <div className="mx-4 mt-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
           <p className="text-amber-300 text-xs text-center">Demo Mode</p>
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="mx-4 mt-2 px-3 py-2 rounded-lg bg-red-500/20 border border-red-500/40">
+          <p className="text-red-300 text-xs text-center">{errorMsg}</p>
+        </div>
+      )}
+
+      {(isPending || isConfirming) && (
+        <div className="mx-4 mt-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30">
+          <p className="text-blue-300 text-xs text-center animate-pulse">
+            {isPending ? "Confirm in your wallet..." : "Confirming on-chain..."}
+          </p>
         </div>
       )}
 
@@ -764,12 +808,28 @@ export default function GamePage() {
               <p className={`text-sm ${lastResult.result > 0 ? "text-green-300 font-bold" : "text-gray-400"}`}>
                 {lastResult.result > 0 ? `+${parseFloat(lastResult.payout).toFixed(4)} CELO` : `-${lastResult.betAmount} CELO`}
               </p>
-              <button
-                onClick={playAgain}
-                className="mt-3 px-5 py-2 rounded-xl font-bold text-sm bg-amber-500 text-black"
-              >
-                SHOOT AGAIN
-              </button>
+              <div className="flex gap-2 mt-3 justify-center">
+                <button
+                  onClick={playAgain}
+                  className="px-5 py-2 rounded-xl font-bold text-sm bg-amber-500 text-black"
+                >
+                  SHOOT AGAIN
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const resultText = lastResult && parseFloat(lastResult.payout) > 0
+                        ? `I just hit ${lastResult.result === 2 ? 'a BULLSEYE 🎯' : 'the ring ⭕'} and won ${parseFloat(lastResult.payout).toFixed(4)} CELO on Arrow!`
+                        : `I missed my shot on Arrow! 💨 Better luck next time.`;
+                      const { sdk } = await import("@farcaster/miniapp-sdk");
+                      sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(resultText + '\n\nPlay Arrow on Celo!')}`);
+                    } catch { /* not in farcaster context */ }
+                  }}
+                  className="px-4 py-2 rounded-xl font-bold text-sm bg-purple-500/80 text-white"
+                >
+                  Share
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -796,7 +856,7 @@ export default function GamePage() {
       </div>
 
       {/* Bottom Controls */}
-      <div className="px-4 py-3 border-t border-gray-800/50 bg-[#0d1117]">
+      <div className="px-4 py-3 border-t border-gray-800/50 bg-[#0d1117]" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
         <div className="mb-3">
           <p className="text-gray-500 text-xs uppercase tracking-wider mb-2 text-center">Bet Amount</p>
           <div className="flex gap-2 justify-center">

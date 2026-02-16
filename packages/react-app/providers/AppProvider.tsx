@@ -3,8 +3,9 @@
 import { farcasterMiniApp } from "@farcaster/miniapp-wagmi-connector";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, createConfig, http } from "wagmi";
-import { celo, celoAlfajores } from "wagmi/chains";
+import { celo } from "wagmi/chains";
 import { injected, walletConnect } from "wagmi/connectors";
+import { defineChain } from "viem";
 
 import Layout from "../components/Layout";
 
@@ -17,25 +18,26 @@ const connectors = [
   injected({ target: "metaMask" }), // MetaMask specifically
 ];
 
-// Custom Alfajores config with working RPC
-const alfajoresWithRpc = {
-  ...celoAlfajores,
+// Celo Sepolia testnet (chain ID 11142220)
+export const celoSepolia = defineChain({
+  id: 11_142_220,
+  name: "Celo Sepolia",
+  nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
   rpcUrls: {
-    default: {
-      http: ["https://alfajores-forno.celo-testnet.org"],
-    },
-    public: {
-      http: ["https://alfajores-forno.celo-testnet.org"],
-    },
+    default: { http: ["https://forno.celo-sepolia.celo-testnet.org"] },
   },
-};
+  blockExplorers: {
+    default: { name: "Celoscan", url: "https://sepolia.celoscan.io" },
+  },
+  testnet: true,
+});
 
 const config = createConfig({
   connectors,
-  chains: [celo, alfajoresWithRpc],
+  chains: [celoSepolia, celo],
   transports: {
+    [celoSepolia.id]: http("https://forno.celo-sepolia.celo-testnet.org"),
     [celo.id]: http("https://forno.celo.org"),
-    [alfajoresWithRpc.id]: http("https://alfajores-forno.celo-testnet.org"),
   },
 });
 

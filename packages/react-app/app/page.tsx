@@ -1,7 +1,6 @@
 "use client";
 
 import { useWeb3 } from "@/contexts/useWeb3";
-import { farcasterMiniApp } from "@farcaster/miniapp-wagmi-connector";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useConnect, useDisconnect } from "wagmi";
@@ -140,7 +139,10 @@ export default function Home() {
               </>
             ) : (
               <button
-                onClick={() => connect({ connector: farcasterMiniApp() })}
+                onClick={() => {
+                  const fc = connectors.find(c => c.id === 'farcasterMiniApp');
+                  if (fc) connect({ connector: fc });
+                }}
                 className="w-full py-4 px-6 rounded-2xl font-bold text-lg transition-all duration-200 active:scale-[0.98] bg-gradient-to-r from-amber-500 to-amber-600 text-black shadow-lg shadow-amber-500/25"
               >
                 Connect Wallet
@@ -163,7 +165,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#0a0a0f] flex flex-col">
       {/* Header */}
-      <div className="px-4 py-3 flex items-center justify-between border-b border-gray-800/50">
+      <div className="px-4 py-3 flex items-center justify-between border-b border-gray-800/50" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
             <span className="text-sm">🎯</span>
@@ -240,7 +242,7 @@ export default function Home() {
       </div>
 
       {/* Footer */}
-      <div className="px-6 py-4 flex items-center justify-between border-t border-gray-800/50">
+      <div className="px-6 py-4 flex items-center justify-between border-t border-gray-800/50" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
         <p className="text-gray-600 text-xs font-mono">
           {address?.slice(0, 6)}...{address?.slice(-4)}
         </p>

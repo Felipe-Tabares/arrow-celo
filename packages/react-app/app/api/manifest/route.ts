@@ -12,24 +12,22 @@ export async function GET(request: NextRequest) {
 
   const baseUrl = `${protocol}://${host}`;
 
-  console.log("Manifest requested from:", baseUrl);
-
   const manifest = {
     miniapp: {
       version: "1",
-      name: "Farcaster × Celo",
+      name: "Arrow",
       iconUrl: `${baseUrl}/logo.svg`,
       homeUrl: baseUrl,
       splashImageUrl: `${baseUrl}/logo.svg`,
-      splashBackgroundColor: "#6366f1",
-      subtitle: "Social miniapp on Celo",
+      splashBackgroundColor: "#0a0a0f",
+      subtitle: "Shoot, Hit, Win on Celo",
       description:
-        "A decentralized social miniapp on Celo blockchain integrated with Farcaster for NFT minting and token operations",
-      primaryCategory: "social",
-      tags: ["social", "nft", "celo", "blockchain", "web3"],
-      ogTitle: "Farcaster × Celo Miniapp",
+        "On-chain archery betting game on Celo blockchain. Aim, shoot, and win up to 1.9x your bet!",
+      primaryCategory: "games",
+      tags: ["games", "betting", "celo", "blockchain", "archery"],
+      ogTitle: "Arrow - On-chain Archery Game",
       ogDescription:
-        "A decentralized social miniapp on Celo blockchain integrated with Farcaster",
+        "Bet micro amounts of CELO and test your aim! Hit the bullseye for 1.9x payout.",
       ogImageUrl: `${baseUrl}/logo.svg`,
       requiredChains: [
         "eip155:44787", // Celo Alfajores Testnet
