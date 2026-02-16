@@ -35,7 +35,7 @@ const POWER_ZONES = {
 };
 
 export default function GamePage() {
-  const { address, isConnected, celoBalance, needsChainSwitch, ensureCorrectChain } = useWeb3();
+  const { address, isConnected, celoBalance, needsChainSwitch, ensureCorrectChain, refetchCeloBalance } = useWeb3();
 
   const [betAmount, setBetAmount] = useState("0.001");
   const [lastResult, setLastResult] = useState<GameResult>(null);
@@ -53,6 +53,14 @@ export default function GamePage() {
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [txStatus, setTxStatus] = useState<"idle" | "signing" | "confirming">("idle");
+
+  // Shot history for the session
+  const [shotHistory, setShotHistory] = useState<Array<{
+    result: number; // 0=miss, 1=ring, 2=bullseye
+    betAmount: string;
+    payout: string;
+    timestamp: number;
+  }>>([]);
 
   // Deterministic grass patches (avoids hydration mismatch from Math.random in render)
   const grassPatches = useMemo(() => {
@@ -308,6 +316,8 @@ export default function GamePage() {
             setShowArrowOnTarget(true);
             setLastResult({ result, payout, betAmount: amount });
             setGameState("result");
+            setShotHistory(prev => [{ result, betAmount: amount, payout, timestamp: Date.now() }, ...prev]);
+            refetchCeloBalance?.();
             return;
           }
         } catch {
@@ -318,9 +328,11 @@ export default function GamePage() {
       // No BetRevealed found = bet was refunded
       setErrorMsg("Bet was refunded by the contract");
       setGameState("idle");
+      refetchCeloBalance?.();
       setTimeout(() => setErrorMsg(null), 5000);
     } catch (error: any) {
       setTxStatus("idle");
+      refetchCeloBalance?.();
       const msg = error?.message || "";
       if (msg.includes("User rejected") || msg.includes("denied")) {
         setErrorMsg("Transaction cancelled");
@@ -906,6 +918,37 @@ export default function GamePage() {
             <p className="text-gray-600">Miss</p>
           </div>
         </div>
+
+        {/* Shot History */}
+        {shotHistory.length > 0 && (
+          <div className="mt-3">
+            <p className="text-gray-500 text-xs uppercase tracking-wider mb-2 text-center">Shot History</p>
+            <div className="max-h-28 overflow-y-auto space-y-1">
+              {shotHistory.map((shot, i) => {
+                const won = parseFloat(shot.payout) > 0;
+                const net = won
+                  ? `+${parseFloat(shot.payout).toFixed(4)}`
+                  : `-${parseFloat(shot.betAmount).toFixed(4)}`;
+                return (
+                  <div key={shot.timestamp + i} className="flex items-center justify-between bg-gray-800/50 rounded-lg px-3 py-1.5 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span>{shot.result === 2 ? "🎯" : shot.result === 1 ? "⭕" : "💨"}</span>
+                      <span className="text-gray-400">
+                        {shot.result === 2 ? "Bullseye" : shot.result === 1 ? "Ring" : "Miss"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-gray-500">{parseFloat(shot.betAmount).toFixed(4)}</span>
+                      <span className={`font-bold ${won ? "text-green-400" : "text-red-400"}`}>
+                        {net}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
