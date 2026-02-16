@@ -40,6 +40,10 @@ contract ArrowGameSecure is Ownable, ReentrancyGuard, Pausable {
     mapping(address => uint256) public playerTotalWon;
     mapping(address => uint256) public playerTotalWagered;
 
+    // ============ Anti-Streak System ============
+    mapping(address => uint256) public playerConsecutiveWins;
+    uint256 public constant STREAK_THRESHOLD = 2; // After 2 consecutive wins, odds get harder
+
     // ============ Commit-Reveal for Randomness ============
     struct PendingBet {
         uint256 amount;
@@ -164,22 +168,32 @@ contract ArrowGameSecure is Ownable, ReentrancyGuard, Pausable {
             bet.commitBlock
         ))) % 100;
 
+        // Anti-streak: harder odds after consecutive wins
+        uint256 streak = playerConsecutiveWins[msg.sender];
+        uint256 bullseyeThreshold = 10;
+        uint256 ringThreshold = 35;
+
+        if (streak >= STREAK_THRESHOLD) {
+            bullseyeThreshold = 5;
+            ringThreshold = 20;
+        }
+
         // Determine outcome
         uint8 result;
         uint256 payout;
 
-        if (random < 15) {
-            // Center hit - 15% chance, 1.9x payout (2x - 5% house edge)
+        if (random < bullseyeThreshold) {
             result = 2;
             payout = (betAmount * MAX_PAYOUT_MULTIPLIER) / 100;
-        } else if (random < 50) {
-            // Outer ring - 35% chance, 0.5x payout
+            playerConsecutiveWins[msg.sender]++;
+        } else if (random < ringThreshold) {
             result = 1;
             payout = betAmount / 2;
+            playerConsecutiveWins[msg.sender]++;
         } else {
-            // Miss - 50% chance, no payout
             result = 0;
             payout = 0;
+            playerConsecutiveWins[msg.sender] = 0;
         }
 
         // Update statistics
@@ -260,18 +274,32 @@ contract ArrowGameSecure is Ownable, ReentrancyGuard, Pausable {
             blockhash(block.number - 1)
         ))) % 100;
 
+        // Anti-streak: harder odds after consecutive wins
+        uint256 streak = playerConsecutiveWins[msg.sender];
+        uint256 bullseyeThreshold = 10;  // 10% base (was 15%)
+        uint256 ringThreshold = 35;      // 25% ring base (was 35%)
+
+        if (streak >= STREAK_THRESHOLD) {
+            // After 2+ consecutive wins: much harder
+            bullseyeThreshold = 5;   // 5% bullseye
+            ringThreshold = 20;      // 15% ring
+        }
+
         uint8 result;
         uint256 payout;
 
-        if (random < 15) {
+        if (random < bullseyeThreshold) {
             result = 2;
             payout = (msg.value * MAX_PAYOUT_MULTIPLIER) / 100;
-        } else if (random < 50) {
+            playerConsecutiveWins[msg.sender]++;
+        } else if (random < ringThreshold) {
             result = 1;
             payout = msg.value / 2;
+            playerConsecutiveWins[msg.sender]++;
         } else {
             result = 0;
             payout = 0;
+            playerConsecutiveWins[msg.sender] = 0; // Reset streak on miss
         }
 
         // Update stats

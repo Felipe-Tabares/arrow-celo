@@ -831,18 +831,18 @@ export default function GamePage() {
                   SHOOT AGAIN
                 </button>
                 <button
-                  onClick={async () => {
-                    try {
-                      const resultText = lastResult && parseFloat(lastResult.payout) > 0
-                        ? `I just hit ${lastResult.result === 2 ? 'a BULLSEYE 🎯' : 'the ring ⭕'} and won ${parseFloat(lastResult.payout).toFixed(4)} CELO on Arrow!`
-                        : `I missed my shot on Arrow! 💨 Better luck next time.`;
-                      const { sdk } = await import("@farcaster/miniapp-sdk");
-                      sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(resultText + '\n\nPlay Arrow on Celo!')}`);
-                    } catch { /* not in farcaster context */ }
+                  onClick={() => {
+                    const won = lastResult && parseFloat(lastResult.payout) > 0;
+                    const resultText = won
+                      ? `I just hit ${lastResult!.result === 2 ? 'a BULLSEYE 🎯' : 'the ring ⭕'} and won ${parseFloat(lastResult!.payout).toFixed(4)} CELO on Arrow!`
+                      : `I missed my shot on Arrow! 💨 Better luck next time.`;
+                    const appUrl = typeof window !== "undefined" ? window.location.origin : "https://arrow-celo-react-app.vercel.app";
+                    const tweet = `${resultText}\n\nPlay Arrow on Celo 🏹\n${appUrl}`;
+                    window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(tweet)}`, "_blank");
                   }}
-                  className="px-4 py-2 rounded-xl font-bold text-sm bg-purple-500/80 text-white"
+                  className="px-4 py-2 rounded-xl font-bold text-sm bg-black text-white border border-gray-600"
                 >
-                  Share
+                  Post on 𝕏
                 </button>
               </div>
             </div>
