@@ -1,13 +1,9 @@
 "use client";
 
 import { useWeb3 } from "@/contexts/useWeb3";
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { parseEther, formatEther, decodeEventLog } from "viem";
-import {
-  useWriteContract,
-  useWaitForTransactionReceipt,
-  useReadContract,
-} from "wagmi";
+import { usePublicClient, useWriteContract } from "wagmi";
 import Link from "next/link";
 import ArrowGameABI from "@/contexts/arrow-game-abi.json";
 
@@ -56,6 +52,7 @@ export default function GamePage() {
   const powerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [txStatus, setTxStatus] = useState<"idle" | "signing" | "confirming">("idle");
 
   // Deterministic grass patches (avoids hydration mismatch from Math.random in render)
   const grassPatches = useMemo(() => {
@@ -71,65 +68,8 @@ export default function GamePage() {
     }));
   }, []);
 
-  const { writeContract, data: txHash, isPending, reset, error: writeError } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess, data: receipt } = useWaitForTransactionReceipt({ hash: txHash });
-
-  // Handle contract errors
-  useEffect(() => {
-    if (writeError) {
-      const msg = writeError.message || "";
-      if (msg.includes("BetTooSmall")) setErrorMsg("Bet is below minimum (0.0005 CELO)");
-      else if (msg.includes("BetTooLarge")) setErrorMsg("Bet exceeds maximum (0.005 CELO)");
-      else if (msg.includes("InsufficientHouseBalance")) setErrorMsg("House has insufficient funds. Try a smaller bet.");
-      else if (msg.includes("User rejected") || msg.includes("denied")) setErrorMsg("Transaction cancelled");
-      else setErrorMsg("Transaction failed. Please try again.");
-      setGameState("idle");
-      const timer = setTimeout(() => setErrorMsg(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [writeError]);
-
-  const { refetch: refetchStats } = useReadContract({
-    address: ARROW_GAME_ADDRESS,
-    abi: ArrowGameABI.abi,
-    functionName: "getPlayerStats",
-    args: address ? [address] : undefined,
-    query: { enabled: !!address && IS_CONTRACT_DEPLOYED },
-  });
-
-  // Parse BetRevealed event from transaction receipt (reliable, no polling needed)
-  useEffect(() => {
-    if (isSuccess && receipt && receipt.logs) {
-      for (const log of receipt.logs) {
-        try {
-          const decoded = decodeEventLog({
-            abi: ArrowGameABI.abi,
-            data: log.data,
-            topics: log.topics,
-          });
-          if (decoded.eventName === "BetRevealed") {
-            const args = decoded.args as any;
-            const result = Number(args.result);
-            const payout = formatEther(args.payout);
-            const amount = formatEther(args.amount);
-            handleContractResult(result, payout, amount);
-            break;
-          }
-        } catch {
-          // Not the event we're looking for
-        }
-      }
-    }
-  }, [isSuccess, receipt]);
-
-  const handleContractResult = useCallback((result: number, payout: string, betAmt: string) => {
-    const landing = generateLandingPosition(result);
-    setArrowLanding(landing);
-    setShowArrowOnTarget(true);
-    setLastResult({ result, payout, betAmount: betAmt });
-    setGameState("result");
-    refetchStats();
-  }, [refetchStats]);
+  const publicClient = usePublicClient();
+  const { writeContractAsync } = useWriteContract();
 
   // Generate random landing position within a zone
   const generateLandingPosition = (result: number): ArrowLanding => {
@@ -249,7 +189,7 @@ export default function GamePage() {
 
   const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
-    if (gameState !== "idle" || isPending || isConfirming) return;
+    if (gameState !== "idle" || txStatus !== "idle") return;
     setErrorMsg(null);
     setIsHolding(true);
     setGameState("drawing");
@@ -297,7 +237,7 @@ export default function GamePage() {
 
         setTimeout(() => {
           if (outcome.reachesTarget) {
-            executeBet(outcome.result, outcome.landing!);
+            executeBet(outcome.result);
           } else {
             setLastResult(null);
             setGameState("result");
@@ -308,10 +248,10 @@ export default function GamePage() {
     requestAnimationFrame(animate);
   };
 
-  const executeBet = async (preCalculatedResult: number, _landing: ArrowLanding) => {
+  const executeBet = async (preCalculatedResult: number) => {
     if (!address) return;
 
-    // Validate balance before sending tx
+    // Validate balance
     if (IS_CONTRACT_DEPLOYED && parseFloat(celoBalance) < parseFloat(betAmount)) {
       setErrorMsg("Insufficient CELO balance");
       setGameState("idle");
@@ -319,30 +259,82 @@ export default function GamePage() {
       return;
     }
 
+    if (!IS_CONTRACT_DEPLOYED) {
+      // Demo mode
+      setTimeout(() => {
+        const multiplier = preCalculatedResult === 2 ? 1.9 : preCalculatedResult === 1 ? 0.5 : 0;
+        const payout = (parseFloat(betAmount) * multiplier).toFixed(6);
+        const landing = generateLandingPosition(preCalculatedResult);
+        setArrowLanding(landing);
+        setShowArrowOnTarget(true);
+        setLastResult({ result: preCalculatedResult, payout, betAmount });
+        setGameState("result");
+      }, 200);
+      return;
+    }
+
     try {
       await ensureCorrectChain();
-      reset();
 
-      if (!IS_CONTRACT_DEPLOYED) {
-        // Demo mode - use pre-calculated result
-        setTimeout(() => {
-          const multiplier = preCalculatedResult === 2 ? 1.9 : preCalculatedResult === 1 ? 0.5 : 0;
-          const payout = (parseFloat(betAmount) * multiplier).toFixed(6);
-          setLastResult({ result: preCalculatedResult, payout, betAmount });
-          setGameState("result");
-        }, 200);
-        return;
-      }
-
-      writeContract({
+      // Step 1: Send tx (user signs in wallet)
+      setTxStatus("signing");
+      const hash = await writeContractAsync({
         address: ARROW_GAME_ADDRESS,
         abi: ArrowGameABI.abi,
         functionName: "quickBet",
         value: parseEther(betAmount),
       });
-    } catch (error) {
-      console.error("Error:", error);
+
+      // Step 2: Wait for on-chain confirmation
+      setTxStatus("confirming");
+      const receipt = await publicClient!.waitForTransactionReceipt({ hash });
+
+      // Step 3: Parse BetRevealed event from receipt
+      setTxStatus("idle");
+      for (const log of receipt.logs) {
+        try {
+          const decoded = decodeEventLog({
+            abi: ArrowGameABI.abi,
+            data: log.data,
+            topics: log.topics,
+          });
+          if (decoded.eventName === "BetRevealed") {
+            const args = decoded.args as any;
+            const result = Number(args.result);
+            const payout = formatEther(args.payout);
+            const amount = formatEther(args.amount);
+            const landing = generateLandingPosition(result);
+            setArrowLanding(landing);
+            setShowArrowOnTarget(true);
+            setLastResult({ result, payout, betAmount: amount });
+            setGameState("result");
+            return;
+          }
+        } catch {
+          // Not the event we're looking for
+        }
+      }
+
+      // No BetRevealed found = bet was refunded
+      setErrorMsg("Bet was refunded by the contract");
       setGameState("idle");
+      setTimeout(() => setErrorMsg(null), 5000);
+    } catch (error: any) {
+      setTxStatus("idle");
+      const msg = error?.message || "";
+      if (msg.includes("User rejected") || msg.includes("denied")) {
+        setErrorMsg("Transaction cancelled");
+      } else if (msg.includes("BetTooSmall")) {
+        setErrorMsg("Bet is below minimum (0.0005 CELO)");
+      } else if (msg.includes("BetTooLarge")) {
+        setErrorMsg("Bet exceeds maximum (0.005 CELO)");
+      } else if (msg.includes("InsufficientHouseBalance")) {
+        setErrorMsg("House has insufficient funds");
+      } else {
+        setErrorMsg("Transaction failed. Try again.");
+      }
+      setGameState("idle");
+      setTimeout(() => setErrorMsg(null), 5000);
     }
   };
 
@@ -350,13 +342,13 @@ export default function GamePage() {
     setGameState("idle");
     setLastResult(null);
     setErrorMsg(null);
+    setTxStatus("idle");
     setPower(0);
     setShotPower(0);
     setArrowLanding(null);
     setShowArrowOnTarget(false);
     setArrowY(0);
     setBowPull(0);
-    reset();
   };
 
   const getPowerColor = (p: number) => {
@@ -411,10 +403,10 @@ export default function GamePage() {
         </div>
       )}
 
-      {(isPending || isConfirming) && (
+      {txStatus !== "idle" && (
         <div className="mx-4 mt-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30">
           <p className="text-blue-300 text-xs text-center animate-pulse">
-            {isPending ? "Confirm in your wallet..." : "Confirming on-chain..."}
+            {txStatus === "signing" ? "Confirm in your wallet..." : "Confirming on-chain..."}
           </p>
         </div>
       )}
