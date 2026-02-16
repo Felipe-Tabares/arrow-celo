@@ -11,11 +11,11 @@ import Layout from "../components/Layout";
 
 const projectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID || "";
 
-// Create connectors - prioritize Farcaster wallet in miniapp environment
+// Create connectors - only include WalletConnect when projectId is configured
 const connectors = [
-  farcasterMiniApp(), // Farcaster wallet (first priority when in miniapp)
-  walletConnect({ projectId, showQrModal: true }), // WalletConnect for multi-wallet support
-  injected({ target: "metaMask" }), // MetaMask specifically
+  farcasterMiniApp(),
+  ...(projectId ? [walletConnect({ projectId, showQrModal: true })] : []),
+  injected({ target: "metaMask" }),
 ];
 
 // Celo Sepolia testnet (chain ID 11142220)

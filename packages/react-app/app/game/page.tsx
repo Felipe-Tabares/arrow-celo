@@ -1,13 +1,12 @@
 "use client";
 
 import { useWeb3 } from "@/contexts/useWeb3";
-import { useEffect, useState, useCallback, useRef } from "react";
-import { parseEther, formatEther } from "viem";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { parseEther, formatEther, decodeEventLog } from "viem";
 import {
   useWriteContract,
   useWaitForTransactionReceipt,
   useReadContract,
-  useWatchContractEvent,
 } from "wagmi";
 import Link from "next/link";
 import ArrowGameABI from "@/contexts/arrow-game-abi.json";
@@ -58,8 +57,22 @@ export default function GamePage() {
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Deterministic grass patches (avoids hydration mismatch from Math.random in render)
+  const grassPatches = useMemo(() => {
+    const seed = (n: number) => {
+      const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+      return x - Math.floor(x);
+    };
+    return Array.from({ length: 20 }, (_, i) => ({
+      width: 10 + seed(i * 4) * 30,
+      height: 5 + seed(i * 4 + 1) * 10,
+      left: seed(i * 4 + 2) * 100,
+      top: seed(i * 4 + 3) * 100,
+    }));
+  }, []);
+
   const { writeContract, data: txHash, isPending, reset, error: writeError } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const { isLoading: isConfirming, isSuccess, data: receipt } = useWaitForTransactionReceipt({ hash: txHash });
 
   // Handle contract errors
   useEffect(() => {
@@ -76,7 +89,7 @@ export default function GamePage() {
     }
   }, [writeError]);
 
-  const { data: playerStats, refetch: refetchStats } = useReadContract({
+  const { refetch: refetchStats } = useReadContract({
     address: ARROW_GAME_ADDRESS,
     abi: ArrowGameABI.abi,
     functionName: "getPlayerStats",
@@ -84,22 +97,32 @@ export default function GamePage() {
     query: { enabled: !!address && IS_CONTRACT_DEPLOYED },
   });
 
-  useWatchContractEvent({
-    address: ARROW_GAME_ADDRESS,
-    abi: ArrowGameABI.abi,
-    eventName: "BetRevealed",
-    onLogs(logs: any[]) {
-      const log = logs[0];
-      if (log && log.args) {
-        const { result, payout, amount } = log.args as { result: number; payout: bigint; amount: bigint };
-        handleContractResult(result, formatEther(payout), formatEther(amount));
+  // Parse BetRevealed event from transaction receipt (reliable, no polling needed)
+  useEffect(() => {
+    if (isSuccess && receipt && receipt.logs) {
+      for (const log of receipt.logs) {
+        try {
+          const decoded = decodeEventLog({
+            abi: ArrowGameABI.abi,
+            data: log.data,
+            topics: log.topics,
+          });
+          if (decoded.eventName === "BetRevealed") {
+            const args = decoded.args as any;
+            const result = Number(args.result);
+            const payout = formatEther(args.payout);
+            const amount = formatEther(args.amount);
+            handleContractResult(result, payout, amount);
+            break;
+          }
+        } catch {
+          // Not the event we're looking for
+        }
       }
-    },
-    enabled: IS_CONTRACT_DEPLOYED,
-  });
+    }
+  }, [isSuccess, receipt]);
 
   const handleContractResult = useCallback((result: number, payout: string, betAmt: string) => {
-    // Generate landing position based on contract result
     const landing = generateLandingPosition(result);
     setArrowLanding(landing);
     setShowArrowOnTarget(true);
@@ -285,7 +308,7 @@ export default function GamePage() {
     requestAnimationFrame(animate);
   };
 
-  const executeBet = async (preCalculatedResult: number, landing: ArrowLanding) => {
+  const executeBet = async (preCalculatedResult: number, _landing: ArrowLanding) => {
     if (!address) return;
 
     // Validate balance before sending tx
@@ -491,17 +514,17 @@ export default function GamePage() {
             />
           ))}
 
-          {/* Grass patches for texture */}
+          {/* Grass patches for texture (deterministic to avoid hydration mismatch) */}
           <div className="absolute inset-0 opacity-30">
-            {[...Array(20)].map((_, i) => (
+            {grassPatches.map((patch, i) => (
               <div
                 key={i}
                 className="absolute rounded-full"
                 style={{
-                  width: `${10 + Math.random() * 30}px`,
-                  height: `${5 + Math.random() * 10}px`,
-                  left: `${Math.random() * 100}%`,
-                  top: `${Math.random() * 100}%`,
+                  width: `${patch.width}px`,
+                  height: `${patch.height}px`,
+                  left: `${patch.left}%`,
+                  top: `${patch.top}%`,
                   background: `radial-gradient(ellipse, rgba(80,120,50,0.5) 0%, transparent 70%)`,
                 }}
               />
