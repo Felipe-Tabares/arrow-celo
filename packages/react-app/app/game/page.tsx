@@ -297,16 +297,40 @@ export default function GamePage() {
       setTxStatus("confirming");
       const receipt = await publicClient!.waitForTransactionReceipt({ hash });
 
-      // Step 3: Parse BetRevealed event from receipt
+      // Step 3: Parse events from receipt
       setTxStatus("idle");
+
+      // Helper to refetch balance now + again after delay (RPC lag)
+      const refreshBalance = () => {
+        refetchCeloBalance?.();
+        setTimeout(() => refetchCeloBalance?.(), 2000);
+      };
+
+      // Check if tx reverted on-chain
+      if (receipt.status === "reverted") {
+        setErrorMsg("Transaction reverted on-chain. Try again.");
+        setGameState("idle");
+        refreshBalance();
+        setTimeout(() => setErrorMsg(null), 5000);
+        return;
+      }
+
+      let foundBetRevealed = false;
+      let foundBetRefunded = false;
+
       for (const log of receipt.logs) {
+        // Only decode logs from the game contract
+        if (log.address.toLowerCase() !== ARROW_GAME_ADDRESS.toLowerCase()) continue;
+
         try {
           const decoded = decodeEventLog({
             abi: ArrowGameABI.abi,
             data: log.data,
             topics: log.topics,
+            strict: false,
           });
           if (decoded.eventName === "BetRevealed") {
+            foundBetRevealed = true;
             const args = decoded.args as any;
             const result = Number(args.result);
             const payout = formatEther(args.payout);
@@ -317,22 +341,28 @@ export default function GamePage() {
             setLastResult({ result, payout, betAmount: amount });
             setGameState("result");
             setShotHistory(prev => [{ result, betAmount: amount, payout, timestamp: Date.now() }, ...prev]);
-            refetchCeloBalance?.();
+            refreshBalance();
             return;
+          } else if (decoded.eventName === "BetRefunded") {
+            foundBetRefunded = true;
           }
         } catch {
-          // Not the event we're looking for
+          // Log from game contract but not a known event - skip
         }
       }
 
-      // No BetRevealed found = bet was refunded
-      setErrorMsg("Bet was refunded by the contract");
+      if (foundBetRefunded) {
+        setErrorMsg("House balance too low. Try a smaller bet.");
+      } else {
+        setErrorMsg("Transaction completed but no result found. Try again.");
+      }
       setGameState("idle");
-      refetchCeloBalance?.();
+      refreshBalance();
       setTimeout(() => setErrorMsg(null), 5000);
     } catch (error: any) {
       setTxStatus("idle");
       refetchCeloBalance?.();
+      setTimeout(() => refetchCeloBalance?.(), 2000);
       const msg = error?.message || "";
       if (msg.includes("User rejected") || msg.includes("denied")) {
         setErrorMsg("Transaction cancelled");
@@ -390,7 +420,7 @@ export default function GamePage() {
   return (
     <div className="min-h-screen bg-[#0d1117] flex flex-col select-none">
       {/* Header */}
-      <div className="px-4 py-3 flex items-center justify-between border-b border-gray-800/50" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
+      <div className="flex-shrink-0 px-4 py-3 flex items-center justify-between border-b border-gray-800/50" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
         <Link href="/" className="flex items-center gap-2">
           <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -882,8 +912,8 @@ export default function GamePage() {
         )}
       </div>
 
-      {/* Bottom Controls */}
-      <div className="px-4 py-3 border-t border-gray-800/50 bg-[#0d1117]" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+      {/* Bottom Controls - fixed height, never compresses game area */}
+      <div className="flex-shrink-0 px-4 py-3 border-t border-gray-800/50 bg-[#0d1117]" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
         <div className="mb-3">
           <p className="text-gray-500 text-xs uppercase tracking-wider mb-2 text-center">Bet Amount</p>
           <div className="flex gap-2 justify-center">
@@ -919,30 +949,21 @@ export default function GamePage() {
           </div>
         </div>
 
-        {/* Shot History */}
+        {/* Shot History - compact, last 5 only */}
         {shotHistory.length > 0 && (
-          <div className="mt-3">
-            <p className="text-gray-500 text-xs uppercase tracking-wider mb-2 text-center">Shot History</p>
-            <div className="max-h-28 overflow-y-auto space-y-1">
-              {shotHistory.map((shot, i) => {
+          <div className="mt-2">
+            <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-1 text-center">Shot History</p>
+            <div className="space-y-0.5">
+              {shotHistory.slice(0, 5).map((shot, i) => {
                 const won = parseFloat(shot.payout) > 0;
                 const net = won
                   ? `+${parseFloat(shot.payout).toFixed(4)}`
                   : `-${parseFloat(shot.betAmount).toFixed(4)}`;
                 return (
-                  <div key={shot.timestamp + i} className="flex items-center justify-between bg-gray-800/50 rounded-lg px-3 py-1.5 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span>{shot.result === 2 ? "🎯" : shot.result === 1 ? "⭕" : "💨"}</span>
-                      <span className="text-gray-400">
-                        {shot.result === 2 ? "Bullseye" : shot.result === 1 ? "Ring" : "Miss"}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-gray-500">{parseFloat(shot.betAmount).toFixed(4)}</span>
-                      <span className={`font-bold ${won ? "text-green-400" : "text-red-400"}`}>
-                        {net}
-                      </span>
-                    </div>
+                  <div key={shot.timestamp + i} className="flex items-center justify-between bg-gray-800/40 rounded px-2 py-1 text-[11px]">
+                    <span>{shot.result === 2 ? "🎯" : shot.result === 1 ? "⭕" : "💨"}</span>
+                    <span className="text-gray-500">{parseFloat(shot.betAmount).toFixed(4)}</span>
+                    <span className={`font-bold ${won ? "text-green-400" : "text-red-400"}`}>{net}</span>
                   </div>
                 );
               })}
