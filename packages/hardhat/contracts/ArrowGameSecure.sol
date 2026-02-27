@@ -189,7 +189,7 @@ contract ArrowGameSecure is Ownable, ReentrancyGuard, Pausable {
         } else if (random < ringThreshold) {
             result = 1;
             payout = betAmount / 2;
-            playerConsecutiveWins[msg.sender]++;
+            playerConsecutiveWins[msg.sender] = 0; // Ring is net loss, reset streak
         } else {
             result = 0;
             payout = 0;
@@ -250,6 +250,7 @@ contract ArrowGameSecure is Ownable, ReentrancyGuard, Pausable {
      * Uses future blockhash which is slightly better but still manipulable.
      */
     function quickBet() external payable nonReentrant whenNotPaused {
+        require(msg.sender == tx.origin, "No contract calls");
         if (msg.value < minBet) revert BetTooSmall(msg.value, minBet);
         if (msg.value > maxBet) revert BetTooLarge(msg.value, maxBet);
 
@@ -295,7 +296,7 @@ contract ArrowGameSecure is Ownable, ReentrancyGuard, Pausable {
         } else if (random < ringThreshold) {
             result = 1;
             payout = msg.value / 2;
-            playerConsecutiveWins[msg.sender]++;
+            playerConsecutiveWins[msg.sender] = 0; // Ring is net loss, reset streak
         } else {
             result = 0;
             payout = 0;
@@ -356,9 +357,11 @@ contract ArrowGameSecure is Ownable, ReentrancyGuard, Pausable {
      */
     function emergencyWithdraw() external onlyOwner whenPaused {
         uint256 balance = address(this).balance;
-        (bool success, ) = payable(owner()).call{value: balance}("");
+        uint256 withdrawable = balance > reserveBalance ? balance - reserveBalance : balance;
+        reserveBalance = 0;
+        (bool success, ) = payable(owner()).call{value: withdrawable}("");
         require(success, "Emergency withdrawal failed");
-        emit EmergencyWithdraw(msg.sender, balance);
+        emit EmergencyWithdraw(msg.sender, withdrawable);
     }
 
     // ============ VIEW FUNCTIONS ============

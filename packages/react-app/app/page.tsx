@@ -2,14 +2,13 @@
 
 import { useWeb3 } from "@/contexts/useWeb3";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useConnect, useDisconnect } from "wagmi";
-
-let sdk: any = null;
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const { address, isConnected, celoBalance, needsChainSwitch, ensureCorrectChain } = useWeb3();
+  const sdkRef = useRef<any>(null);
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const [isFarcasterMiniapp, setIsFarcasterMiniapp] = useState(false);
@@ -34,8 +33,8 @@ export default function Home() {
 
         if (isMiniApp) {
           const { sdk: farcasterSDK } = await import("@farcaster/miniapp-sdk");
-          sdk = farcasterSDK;
-          sdk.actions.ready();
+          sdkRef.current = farcasterSDK;
+          sdkRef.current.actions.ready();
         }
         setIsInitializing(false);
       } catch (error) {

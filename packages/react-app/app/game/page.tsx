@@ -50,13 +50,17 @@ export default function GamePage() {
   const [showArrowOnTarget, setShowArrowOnTarget] = useState(false);
 
   const powerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const animTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isBettingRef = useRef(false);
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [txStatus, setTxStatus] = useState<"idle" | "signing" | "confirming">("idle");
 
   // Shot history for the session
   const [shotHistory, setShotHistory] = useState<Array<{
-    result: number; // 0=miss, 1=ring, 2=bullseye
+    result: number; // -1=failed, 0=miss, 1=ring, 2=bullseye
     betAmount: string;
     payout: string;
     timestamp: number;
@@ -78,6 +82,22 @@ export default function GamePage() {
 
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+
+  // Centralized error display (prevents setTimeout stacking)
+  const showError = (msg: string) => {
+    setErrorMsg(msg);
+    if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+    errorTimeoutRef.current = setTimeout(() => setErrorMsg(null), 5000);
+  };
+
+  // Cleanup animation/timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+    };
+  }, []);
 
   // Generate random landing position within a zone
   const generateLandingPosition = (result: number): ArrowLanding => {
@@ -238,12 +258,12 @@ export default function GamePage() {
       setArrowY(easeOut * maxTravel);
 
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        animationRef.current = requestAnimationFrame(animate);
       } else {
         // Arrow landed
         setShowArrowOnTarget(outcome.reachesTarget);
 
-        setTimeout(() => {
+        animTimeoutRef.current = setTimeout(() => {
           if (outcome.reachesTarget) {
             executeBet(outcome.result);
           } else {
@@ -253,17 +273,16 @@ export default function GamePage() {
         }, 300);
       }
     };
-    requestAnimationFrame(animate);
+    animationRef.current = requestAnimationFrame(animate);
   };
 
   const executeBet = async (preCalculatedResult: number) => {
-    if (!address) return;
+    if (!address || isBettingRef.current) return;
 
     // Validate balance
     if (IS_CONTRACT_DEPLOYED && parseFloat(celoBalance) < parseFloat(betAmount)) {
-      setErrorMsg("Insufficient CELO balance");
+      showError("Insufficient CELO balance");
       setGameState("idle");
-      setTimeout(() => setErrorMsg(null), 5000);
       return;
     }
 
@@ -281,14 +300,45 @@ export default function GamePage() {
       return;
     }
 
+    isBettingRef.current = true;
+
+    // Cleanup helper for error/abort paths
+    const resetVisuals = () => {
+      setArrowLanding(null);
+      setShowArrowOnTarget(false);
+      setArrowY(0);
+      setBowPull(0);
+    };
+
+    const refreshBalance = () => {
+      refetchCeloBalance?.();
+      setTimeout(() => refetchCeloBalance?.(), 1000);
+      setTimeout(() => refetchCeloBalance?.(), 3000);
+    };
+
     try {
-      await ensureCorrectChain();
+      // Ensure correct chain first (separate error handling)
+      try {
+        await ensureCorrectChain();
+      } catch {
+        showError("Please switch to Celo Sepolia network.");
+        setGameState("idle");
+        resetVisuals();
+        isBettingRef.current = false;
+        return;
+      }
+
+      if (!publicClient) {
+        showError("Network error. Please refresh.");
+        setGameState("idle");
+        resetVisuals();
+        isBettingRef.current = false;
+        return;
+      }
 
       // Step 1: Send tx (user signs in wallet)
-      // Gas: explicit 200k to prevent intermittent reverts. The contract
-      // uses block.prevrandao for randomness, so gas estimation may simulate
-      // a "miss" path (low gas) but execution takes "win" path (higher gas
-      // due to payout transfer). Fixed gas avoids this mismatch.
+      // Gas: explicit 300k to prevent intermittent reverts due to
+      // gas estimation mismatch with on-chain randomness paths.
       setTxStatus("signing");
       const hash = await writeContractAsync({
         address: ARROW_GAME_ADDRESS,
@@ -300,31 +350,25 @@ export default function GamePage() {
 
       // Step 2: Wait for on-chain confirmation
       setTxStatus("confirming");
-      const receipt = await publicClient!.waitForTransactionReceipt({ hash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
       // Step 3: Parse events from receipt
       setTxStatus("idle");
 
-      // Aggressively refetch balance: now + 1s + 3s (covers RPC lag)
-      const refreshBalance = () => {
-        refetchCeloBalance?.();
-        setTimeout(() => refetchCeloBalance?.(), 1000);
-        setTimeout(() => refetchCeloBalance?.(), 3000);
-      };
-
       // Check if tx reverted on-chain
       if (receipt.status === "reverted") {
-        setErrorMsg("Transaction reverted on-chain. Try again.");
+        showError("Transaction reverted on-chain. Try again.");
         setGameState("idle");
+        resetVisuals();
+        setShotHistory(prev => [{ result: -1, betAmount, payout: "0", timestamp: Date.now() }, ...prev]);
         refreshBalance();
-        setTimeout(() => setErrorMsg(null), 5000);
+        isBettingRef.current = false;
         return;
       }
 
       let foundBetRefunded = false;
 
       for (const log of receipt.logs) {
-        // Only decode logs from the game contract
         if (log.address.toLowerCase() !== ARROW_GAME_ADDRESS.toLowerCase()) continue;
 
         try {
@@ -346,6 +390,7 @@ export default function GamePage() {
             setGameState("result");
             setShotHistory(prev => [{ result, betAmount: amount, payout, timestamp: Date.now() }, ...prev]);
             refreshBalance();
+            isBettingRef.current = false;
             return;
           } else if (decoded.eventName === "BetRefunded") {
             foundBetRefunded = true;
@@ -356,35 +401,40 @@ export default function GamePage() {
       }
 
       if (foundBetRefunded) {
-        setErrorMsg("House balance too low. Try a smaller bet.");
+        showError("House balance too low. Try a smaller bet.");
       } else {
-        setErrorMsg("Transaction completed but no result found. Try again.");
+        showError("Transaction completed but no result found. Try again.");
       }
       setGameState("idle");
+      resetVisuals();
       refreshBalance();
-      setTimeout(() => setErrorMsg(null), 5000);
+      isBettingRef.current = false;
     } catch (error: any) {
       setTxStatus("idle");
-      refetchCeloBalance?.();
-      setTimeout(() => refetchCeloBalance?.(), 2000);
+      refreshBalance();
       const msg = error?.message || "";
       if (msg.includes("User rejected") || msg.includes("denied")) {
-        setErrorMsg("Transaction cancelled");
+        showError("Transaction cancelled");
       } else if (msg.includes("BetTooSmall")) {
-        setErrorMsg("Bet is below minimum (0.0005 CELO)");
+        showError("Bet is below minimum (0.0005 CELO)");
       } else if (msg.includes("BetTooLarge")) {
-        setErrorMsg("Bet exceeds maximum (0.005 CELO)");
+        showError("Bet exceeds maximum (0.005 CELO)");
       } else if (msg.includes("InsufficientHouseBalance")) {
-        setErrorMsg("House has insufficient funds");
+        showError("House has insufficient funds");
       } else {
-        setErrorMsg("Transaction failed. Try again.");
+        showError("Transaction failed. Try again.");
+        setShotHistory(prev => [{ result: -1, betAmount, payout: "0", timestamp: Date.now() }, ...prev]);
       }
       setGameState("idle");
-      setTimeout(() => setErrorMsg(null), 5000);
+      resetVisuals();
+      isBettingRef.current = false;
     }
   };
 
   const playAgain = () => {
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
+    isBettingRef.current = false;
     setGameState("idle");
     setLastResult(null);
     setErrorMsg(null);
@@ -867,8 +917,11 @@ export default function GamePage() {
               }`}>
                 {lastResult.result === 2 ? "BULLSEYE!" : lastResult.result === 1 ? "OUTER RING!" : "MISSED!"}
               </h2>
-              <p className={`text-sm ${lastResult.result > 0 ? "text-green-300 font-bold" : "text-gray-400"}`}>
-                {lastResult.result > 0 ? `+${parseFloat(lastResult.payout).toFixed(4)} CELO` : `-${lastResult.betAmount} CELO`}
+              <p className={`text-sm font-bold ${parseFloat(lastResult.payout) > parseFloat(lastResult.betAmount) ? "text-green-300" : "text-red-400"}`}>
+                {(() => {
+                  const net = parseFloat(lastResult.payout) - parseFloat(lastResult.betAmount);
+                  return net >= 0 ? `+${net.toFixed(4)} CELO` : `${net.toFixed(4)} CELO`;
+                })()}
               </p>
               <div className="flex gap-2 mt-3 justify-center">
                 <button
@@ -960,15 +1013,14 @@ export default function GamePage() {
             <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-1 text-center">Shot History</p>
             <div className="space-y-0.5">
               {shotHistory.slice(0, 5).map((shot, i) => {
-                const won = parseFloat(shot.payout) > 0;
-                const net = won
-                  ? `+${parseFloat(shot.payout).toFixed(4)}`
-                  : `-${parseFloat(shot.betAmount).toFixed(4)}`;
+                const netVal = parseFloat(shot.payout) - parseFloat(shot.betAmount);
+                const net = shot.result === -1 ? "failed" : netVal >= 0 ? `+${netVal.toFixed(4)}` : netVal.toFixed(4);
+                const icon = shot.result === 2 ? "🎯" : shot.result === 1 ? "⭕" : shot.result === -1 ? "❌" : "💨";
                 return (
                   <div key={shot.timestamp + i} className="flex items-center justify-between bg-gray-800/40 rounded px-2 py-1 text-[11px]">
-                    <span>{shot.result === 2 ? "🎯" : shot.result === 1 ? "⭕" : "💨"}</span>
+                    <span>{icon}</span>
                     <span className="text-gray-500">{parseFloat(shot.betAmount).toFixed(4)}</span>
-                    <span className={`font-bold ${won ? "text-green-400" : "text-red-400"}`}>{net}</span>
+                    <span className={`font-bold ${netVal >= 0 && shot.result !== -1 ? "text-green-400" : "text-red-400"}`}>{net}</span>
                   </div>
                 );
               })}

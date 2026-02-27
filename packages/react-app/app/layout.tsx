@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description:
     "On-chain archery betting game on Celo. Aim, shoot, and win up to 1.9x your bet!",
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+    process.env.NEXT_PUBLIC_BASE_URL || "https://arrow-celo-react-app.vercel.app"
   ),
   openGraph: {
     title: "Arrow - On-chain Archery Game",
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   },
   other: {
     "fc:frame": "miniapp",
-    "fc:frame:manifest_url": `${process.env.NEXT_PUBLIC_APP_URL || "https://arrow-celo-react-app.vercel.app"}/.well-known/farcaster.json`,
+    "fc:frame:manifest_url": `${process.env.NEXT_PUBLIC_BASE_URL || "https://arrow-celo-react-app.vercel.app"}/.well-known/farcaster.json`,
   },
 };
 

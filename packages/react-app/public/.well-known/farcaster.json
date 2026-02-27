@@ -1,10 +1,15 @@
 {
+  "accountAssociation": {
+    "header": "",
+    "payload": "",
+    "signature": ""
+  },
   "miniapp": {
     "version": "1",
     "name": "Arrow",
-    "iconUrl": "/logo.svg",
-    "homeUrl": "/",
-    "splashImageUrl": "/logo.svg",
+    "iconUrl": "https://arrow-celo-react-app.vercel.app/icon.svg",
+    "homeUrl": "https://arrow-celo-react-app.vercel.app",
+    "splashImageUrl": "https://arrow-celo-react-app.vercel.app/icon.svg",
     "splashBackgroundColor": "#0a0a0f",
     "subtitle": "Shoot, Hit, Win on Celo",
     "description": "On-chain archery betting game on Celo blockchain. Aim, shoot, and win up to 1.9x your bet!",
@@ -12,8 +17,8 @@
     "tags": ["games", "betting", "celo", "blockchain", "archery"],
     "ogTitle": "Arrow - On-chain Archery Game",
     "ogDescription": "Bet micro amounts of CELO and test your aim! Hit the bullseye for 1.9x payout.",
-    "ogImageUrl": "/logo.svg",
-    "requiredChains": ["eip155:44787", "eip155:42220"],
+    "ogImageUrl": "https://arrow-celo-react-app.vercel.app/icon.svg",
+    "requiredChains": ["eip155:42220"],
     "requiredCapabilities": ["wallet.getEthereumProvider"]
   }
 }
