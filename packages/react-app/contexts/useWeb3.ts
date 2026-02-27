@@ -15,13 +15,14 @@ export const useWeb3 = () => {
   // Check if we need to switch chains
   const needsChainSwitch = chain?.id !== TARGET_CHAIN_ID;
 
-  // Get native CELO balance
+  // Get native CELO balance - poll every 4s for near-realtime updates
   const { data: celoBalance, refetch: refetchCeloBalance } = useBalance({
     address: address,
     chainId: TARGET_CHAIN_ID,
     query: {
       enabled: !!address,
-      refetchInterval: 10000,
+      refetchInterval: 4000,
+      staleTime: 0,
     },
   });
 

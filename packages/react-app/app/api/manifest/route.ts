@@ -16,9 +16,9 @@ export async function GET(request: NextRequest) {
     miniapp: {
       version: "1",
       name: "Arrow",
-      iconUrl: `${baseUrl}/logo.svg`,
+      iconUrl: `${baseUrl}/icon.svg`,
       homeUrl: baseUrl,
-      splashImageUrl: `${baseUrl}/logo.svg`,
+      splashImageUrl: `${baseUrl}/icon.svg`,
       splashBackgroundColor: "#0a0a0f",
       subtitle: "Shoot, Hit, Win on Celo",
       description:
@@ -28,10 +28,10 @@ export async function GET(request: NextRequest) {
       ogTitle: "Arrow - On-chain Archery Game",
       ogDescription:
         "Bet micro amounts of CELO and test your aim! Hit the bullseye for 1.9x payout.",
-      ogImageUrl: `${baseUrl}/logo.svg`,
+      ogImageUrl: `${baseUrl}/icon.svg`,
       requiredChains: [
-        "eip155:44787", // Celo Alfajores Testnet
-        "eip155:42220", // Celo Mainnet
+        "eip155:11142220", // Celo Sepolia Testnet
+        "eip155:42220",    // Celo Mainnet
       ],
       requiredCapabilities: ["wallet.getEthereumProvider"],
     },

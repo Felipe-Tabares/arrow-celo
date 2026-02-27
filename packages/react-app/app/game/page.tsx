@@ -300,10 +300,11 @@ export default function GamePage() {
       // Step 3: Parse events from receipt
       setTxStatus("idle");
 
-      // Helper to refetch balance now + again after delay (RPC lag)
+      // Aggressively refetch balance: now + 1s + 3s (covers RPC lag)
       const refreshBalance = () => {
         refetchCeloBalance?.();
-        setTimeout(() => refetchCeloBalance?.(), 2000);
+        setTimeout(() => refetchCeloBalance?.(), 1000);
+        setTimeout(() => refetchCeloBalance?.(), 3000);
       };
 
       // Check if tx reverted on-chain
@@ -315,7 +316,6 @@ export default function GamePage() {
         return;
       }
 
-      let foundBetRevealed = false;
       let foundBetRefunded = false;
 
       for (const log of receipt.logs) {
@@ -330,7 +330,6 @@ export default function GamePage() {
             strict: false,
           });
           if (decoded.eventName === "BetRevealed") {
-            foundBetRevealed = true;
             const args = decoded.args as any;
             const result = Number(args.result);
             const payout = formatEther(args.payout);
@@ -418,7 +417,7 @@ export default function GamePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0d1117] flex flex-col select-none">
+    <div className="h-screen bg-[#0d1117] flex flex-col select-none overflow-hidden relative">
       {/* Header */}
       <div className="flex-shrink-0 px-4 py-3 flex items-center justify-between border-b border-gray-800/50" style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}>
         <Link href="/" className="flex items-center gap-2">
@@ -433,29 +432,30 @@ export default function GamePage() {
         </div>
       </div>
 
-      {!IS_CONTRACT_DEPLOYED && (
-        <div className="mx-4 mt-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-          <p className="text-amber-300 text-xs text-center">Demo Mode</p>
-        </div>
-      )}
+      {/* Status overlays - absolute so they don't push layout */}
+      <div className="absolute left-0 right-0 z-30 flex flex-col items-center gap-1 px-4" style={{ top: "max(3.5rem, calc(env(safe-area-inset-top) + 3rem))" }}>
+        {!IS_CONTRACT_DEPLOYED && (
+          <div className="w-full px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <p className="text-amber-300 text-xs text-center">Demo Mode</p>
+          </div>
+        )}
+        {errorMsg && (
+          <div className="w-full px-3 py-2 rounded-lg bg-red-500/20 border border-red-500/40 backdrop-blur-sm">
+            <p className="text-red-300 text-xs text-center">{errorMsg}</p>
+          </div>
+        )}
+        {txStatus !== "idle" && (
+          <div className="w-full px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30 backdrop-blur-sm">
+            <p className="text-blue-300 text-xs text-center animate-pulse">
+              {txStatus === "signing" ? "Confirm in your wallet..." : "Confirming on-chain..."}
+            </p>
+          </div>
+        )}
+      </div>
 
-      {errorMsg && (
-        <div className="mx-4 mt-2 px-3 py-2 rounded-lg bg-red-500/20 border border-red-500/40">
-          <p className="text-red-300 text-xs text-center">{errorMsg}</p>
-        </div>
-      )}
-
-      {txStatus !== "idle" && (
-        <div className="mx-4 mt-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30">
-          <p className="text-blue-300 text-xs text-center animate-pulse">
-            {txStatus === "signing" ? "Confirm in your wallet..." : "Confirming on-chain..."}
-          </p>
-        </div>
-      )}
-
-      {/* Game Area */}
+      {/* Game Area - never shrinks */}
       <div
-        className="flex-1 relative overflow-hidden"
+        className="flex-1 min-h-0 relative overflow-hidden"
         style={{
           background: "linear-gradient(180deg, #87CEEB 0%, #B0C4DE 20%, #4a6741 50%, #3d5a35 100%)",
           touchAction: "none"

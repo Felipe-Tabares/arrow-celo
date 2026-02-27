@@ -15,12 +15,16 @@ export const metadata: Metadata = {
       "Bet micro amounts of CELO and test your aim! Hit the bullseye for 1.9x payout.",
     images: [
       {
-        url: "/logo.svg",
-        width: 1200,
-        height: 630,
+        url: "/icon.svg",
+        width: 200,
+        height: 200,
         alt: "Arrow Game",
       },
     ],
+  },
+  other: {
+    "fc:frame": "miniapp",
+    "fc:frame:manifest_url": `${process.env.NEXT_PUBLIC_APP_URL || "https://arrow-celo-react-app.vercel.app"}/.well-known/farcaster.json`,
   },
 };
 
