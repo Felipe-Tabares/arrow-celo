@@ -7,7 +7,7 @@ import { usePublicClient, useWriteContract } from "wagmi";
 import Link from "next/link";
 import ArrowGameABI from "@/contexts/arrow-game-abi.json";
 
-const ARROW_GAME_ADDRESS = (process.env.NEXT_PUBLIC_ARROW_GAME_ADDRESS || "0x0000000000000000000000000000000000000000") as `0x${string}`;
+const ARROW_GAME_ADDRESS = (process.env.NEXT_PUBLIC_ARROW_GAME_ADDRESS || "0x7811742fD0271A7861778E3D8AAF4BC583751f4F") as `0x${string}`;
 const IS_CONTRACT_DEPLOYED = ARROW_GAME_ADDRESS !== "0x0000000000000000000000000000000000000000";
 
 type GameResult = {
@@ -342,7 +342,7 @@ export default function GamePage() {
       setTxStatus("signing");
       const hash = await writeContractAsync({
         address: ARROW_GAME_ADDRESS,
-        abi: ArrowGameABI.abi,
+        abi: ArrowGameABI,
         functionName: "quickBet",
         value: parseEther(betAmount),
         gas: BigInt(300000),
@@ -373,7 +373,7 @@ export default function GamePage() {
 
         try {
           const decoded = decodeEventLog({
-            abi: ArrowGameABI.abi,
+            abi: ArrowGameABI,
             data: log.data,
             topics: log.topics,
             strict: false,
