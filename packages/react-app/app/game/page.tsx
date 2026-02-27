@@ -285,12 +285,17 @@ export default function GamePage() {
       await ensureCorrectChain();
 
       // Step 1: Send tx (user signs in wallet)
+      // Gas: explicit 200k to prevent intermittent reverts. The contract
+      // uses block.prevrandao for randomness, so gas estimation may simulate
+      // a "miss" path (low gas) but execution takes "win" path (higher gas
+      // due to payout transfer). Fixed gas avoids this mismatch.
       setTxStatus("signing");
       const hash = await writeContractAsync({
         address: ARROW_GAME_ADDRESS,
         abi: ArrowGameABI.abi,
         functionName: "quickBet",
         value: parseEther(betAmount),
+        gas: BigInt(300000),
       });
 
       // Step 2: Wait for on-chain confirmation
