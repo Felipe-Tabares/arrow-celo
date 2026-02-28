@@ -21,7 +21,7 @@ type GameState = "idle" | "drawing" | "flying" | "result";
 type ArrowLandingData = {
   x: number;  // -50 to 50 (percentage from center)
   y: number;  // -50 to 50 (percentage from center)
-  zone: "bullseye" | "inner" | "outer" | "miss" | "short" | "overshoot";
+  zone: "bullseye" | "inner" | "outer" | "miss";
 };
 
 type ArrowLanding = ArrowLandingData | null;
@@ -90,9 +90,10 @@ export default function GamePage() {
     errorTimeoutRef.current = setTimeout(() => setErrorMsg(null), 5000);
   };
 
-  // Cleanup animation/timeouts on unmount
+  // Cleanup all intervals/timeouts/animations on unmount
   useEffect(() => {
     return () => {
+      if (powerIntervalRef.current) clearInterval(powerIntervalRef.current);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
       if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
@@ -126,72 +127,7 @@ export default function GamePage() {
     };
   };
 
-  // Calculate shot outcome with randomness based on power
-  const calculateShotOutcome = (power: number): { reachesTarget: boolean; result: number; landing: ArrowLanding } => {
-    // Base randomness - add variance to power
-    const variance = (Math.random() - 0.5) * 20; // ±10% variance
-    const effectivePower = power + variance;
-
-    // Check if reaches target
-    if (effectivePower < 20) {
-      return {
-        reachesTarget: false,
-        result: -1,
-        landing: { x: 0, y: 30 + Math.random() * 20, zone: "short" }
-      };
-    }
-    if (effectivePower > 80) {
-      return {
-        reachesTarget: false,
-        result: -1,
-        landing: { x: (Math.random() - 0.5) * 40, y: -60, zone: "overshoot" }
-      };
-    }
-
-    // Reaches target - calculate accuracy based on power zone
-    const inSweetSpot = power >= POWER_ZONES.SWEET_SPOT.min && power <= POWER_ZONES.SWEET_SPOT.max;
-    const inValidLow = power >= POWER_ZONES.VALID_LOW.min && power < POWER_ZONES.SWEET_SPOT.min;
-    const inValidHigh = power > POWER_ZONES.SWEET_SPOT.max && power <= POWER_ZONES.VALID_HIGH.max;
-
-    // Accuracy affects the "spread" of where arrow lands
-    let accuracyMultiplier: number;
-    if (inSweetSpot) {
-      accuracyMultiplier = 0.6; // Tighter spread, more likely center
-    } else if (inValidLow || inValidHigh) {
-      accuracyMultiplier = 1.0; // Normal spread
-    } else {
-      accuracyMultiplier = 1.5; // Wide spread, edges
-    }
-
-    // Random distance from center (affected by accuracy)
-    const baseDistance = Math.random() * 50 * accuracyMultiplier;
-    const angle = Math.random() * Math.PI * 2;
-
-    // Determine result based on distance
-    let result: number;
-    let zone: ArrowLandingData["zone"];
-
-    if (baseDistance < 12) {
-      result = 2; // Bullseye
-      zone = "bullseye";
-    } else if (baseDistance < 35) {
-      result = 1; // Ring
-      zone = baseDistance < 22 ? "inner" : "outer";
-    } else {
-      result = 0; // Miss (edge of target)
-      zone = "miss";
-    }
-
-    return {
-      reachesTarget: true,
-      result,
-      landing: {
-        x: Math.cos(angle) * Math.min(baseDistance, 48),
-        y: Math.sin(angle) * Math.min(baseDistance, 48),
-        zone
-      }
-    };
-  };
+  // Power only affects visual flair - the contract determines the real outcome
 
   // Power increases while holding
   useEffect(() => {
@@ -234,67 +170,54 @@ export default function GamePage() {
     setIsHolding(false);
     setShotPower(power);
 
-    // Calculate outcome with randomness
-    const outcome = calculateShotOutcome(power);
-    setArrowLanding(outcome.landing);
-
-    animateArrow(power, outcome);
+    // Arrow always flies toward target - contract determines outcome
+    animateArrow();
   };
 
-  const animateArrow = (
-    shotPower: number,
-    outcome: { reachesTarget: boolean; result: number; landing: ArrowLanding }
-  ) => {
+  const animateArrow = () => {
     setGameState("flying");
     setBowPull(0);
-
-    const maxTravel = outcome.reachesTarget ? 100 :
-                      outcome.landing?.zone === "short" ? 30 + (shotPower / 25) * 35 : 115;
 
     let progress = 0;
     const animate = () => {
       progress += 0.03;
       const easeOut = 1 - Math.pow(1 - Math.min(progress, 1), 3);
-      setArrowY(easeOut * maxTravel);
+      setArrowY(easeOut * 100);
 
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animate);
       } else {
-        // Arrow landed
-        setShowArrowOnTarget(outcome.reachesTarget);
-
+        // Arrow reached target area - now submit bet to contract
         animTimeoutRef.current = setTimeout(() => {
-          if (outcome.reachesTarget) {
-            executeBet(outcome.result);
-          } else {
-            setLastResult(null);
-            setGameState("result");
-          }
-        }, 300);
+          executeBet();
+        }, 200);
       }
     };
     animationRef.current = requestAnimationFrame(animate);
   };
 
-  const executeBet = async (preCalculatedResult: number) => {
+  const executeBet = async () => {
     if (!address || isBettingRef.current) return;
 
     // Validate balance
     if (IS_CONTRACT_DEPLOYED && parseFloat(celoBalance) < parseFloat(betAmount)) {
       showError("Insufficient CELO balance");
       setGameState("idle");
+      setArrowY(0);
       return;
     }
 
     if (!IS_CONTRACT_DEPLOYED) {
-      // Demo mode
+      // Demo mode - simulate contract randomness
       setTimeout(() => {
-        const multiplier = preCalculatedResult === 2 ? 1.9 : preCalculatedResult === 1 ? 0.5 : 0;
+        const rand = Math.random() * 100;
+        const demoResult = rand < 10 ? 2 : rand < 35 ? 1 : 0; // Match contract odds
+        const multiplier = demoResult === 2 ? 1.9 : demoResult === 1 ? 0.5 : 0;
         const payout = (parseFloat(betAmount) * multiplier).toFixed(6);
-        const landing = generateLandingPosition(preCalculatedResult);
+        const landing = generateLandingPosition(demoResult);
         setArrowLanding(landing);
         setShowArrowOnTarget(true);
-        setLastResult({ result: preCalculatedResult, payout, betAmount });
+        setLastResult({ result: demoResult, payout, betAmount });
         setGameState("result");
       }, 200);
       return;
@@ -350,7 +273,7 @@ export default function GamePage() {
 
       // Step 2: Wait for on-chain confirmation
       setTxStatus("confirming");
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
 
       // Step 3: Parse events from receipt
       setTxStatus("idle");
@@ -671,7 +594,7 @@ export default function GamePage() {
               <circle cx="70" cy="70" r="5" fill="#000"/>
 
               {/* Arrow stuck in target */}
-              {showArrowOnTarget && arrowLanding && arrowLanding.zone !== "short" && arrowLanding.zone !== "overshoot" && (
+              {showArrowOnTarget && arrowLanding && (
                 <g transform={`translate(${70 + arrowLanding.x * 0.8}, ${70 + arrowLanding.y * 0.8})`}>
                   {/* Arrow shaft (shorter for small target) */}
                   <rect x="-3" y="-20" width="6" height="24" fill="#8B7355" rx="2"/>
@@ -738,45 +661,6 @@ export default function GamePage() {
           </div>
         )}
 
-        {/* Missed arrow - fell short (on the grass) */}
-        {gameState === "result" && arrowLanding?.zone === "short" && (
-          <div
-            className="absolute left-1/2 -translate-x-1/2"
-            style={{ top: "52%" }}
-          >
-            {/* Arrow stuck in grass at angle */}
-            <svg width="24" height="48" viewBox="0 0 32 64" style={{ transform: "rotate(25deg)" }}>
-              <rect x="14" y="16" width="4" height="44" fill="#8B7355" rx="1"/>
-              <polygon points="16,0 10,16 16,12 22,16" fill="#4a5568"/>
-              <polygon points="12,56 16,46 14,60" fill="#dc2626"/>
-              <polygon points="20,56 16,46 18,60" fill="#dc2626"/>
-            </svg>
-            {/* Shadow */}
-            <div
-              className="absolute -bottom-2 left-1/2 -translate-x-1/2"
-              style={{
-                width: "30px",
-                height: "8px",
-                background: "radial-gradient(ellipse, rgba(0,0,0,0.3) 0%, transparent 70%)",
-              }}
-            />
-          </div>
-        )}
-
-        {/* Missed arrow - overshot (past target) */}
-        {gameState === "result" && arrowLanding?.zone === "overshoot" && (
-          <div
-            className="absolute left-1/2 -translate-x-1/2"
-            style={{ top: "28%" }}
-          >
-            <svg width="16" height="32" viewBox="0 0 32 64" style={{ transform: "rotate(-10deg) scale(0.5)" }}>
-              <rect x="14" y="16" width="4" height="44" fill="#8B7355" rx="1"/>
-              <polygon points="16,0 10,16 16,12 22,16" fill="#4a5568"/>
-              <polygon points="12,56 16,46 14,60" fill="#dc2626"/>
-              <polygon points="20,56 16,46 18,60" fill="#dc2626"/>
-            </svg>
-          </div>
-        )}
 
         {/* Bow shadow on ground - LARGE */}
         <div
@@ -900,8 +784,8 @@ export default function GamePage() {
           </div>
         )}
 
-        {/* Result overlay - Target hit */}
-        {gameState === "result" && lastResult && arrowLanding && arrowLanding.zone !== "short" && arrowLanding.zone !== "overshoot" && (
+        {/* Result overlay */}
+        {gameState === "result" && lastResult && arrowLanding && (
           <div className="absolute inset-x-0 bottom-[15%] flex justify-center z-20">
             <div className={`text-center p-5 rounded-2xl backdrop-blur-sm mx-4 ${
               lastResult.result === 2 ? "bg-green-500/20 border border-green-500" :
@@ -949,22 +833,12 @@ export default function GamePage() {
           </div>
         )}
 
-        {/* Result overlay - Missed target entirely */}
-        {gameState === "result" && (arrowLanding?.zone === "short" || arrowLanding?.zone === "overshoot") && (
+        {/* Waiting for result overlay */}
+        {gameState === "result" && !lastResult && !errorMsg && (
           <div className="absolute inset-x-0 bottom-[15%] flex justify-center z-20">
-            <div className="text-center p-5 rounded-2xl backdrop-blur-sm mx-4 bg-gray-500/20 border border-gray-500">
-              <div className="text-4xl mb-2">{arrowLanding?.zone === "short" ? "💨" : "💥"}</div>
-              <h2 className="text-xl font-black mb-1 text-gray-300">
-                {arrowLanding?.zone === "short" ? "TOO WEAK!" : "TOO STRONG!"}
-              </h2>
-              <p className="text-gray-400 text-sm">No bet placed</p>
-              <p className="text-xs text-gray-500 mt-1">Power: {Math.round(shotPower)}%</p>
-              <button
-                onClick={playAgain}
-                className="mt-3 px-5 py-2 rounded-xl font-bold text-sm bg-amber-500 text-black"
-              >
-                TRY AGAIN
-              </button>
+            <div className="text-center p-5 rounded-2xl backdrop-blur-sm mx-4 bg-blue-500/10 border border-blue-500/30">
+              <div className="text-4xl mb-2 animate-pulse">🏹</div>
+              <h2 className="text-lg font-bold text-blue-300 animate-pulse">Waiting for result...</h2>
             </div>
           </div>
         )}
@@ -1017,7 +891,7 @@ export default function GamePage() {
                 const net = shot.result === -1 ? "failed" : netVal >= 0 ? `+${netVal.toFixed(4)}` : netVal.toFixed(4);
                 const icon = shot.result === 2 ? "🎯" : shot.result === 1 ? "⭕" : shot.result === -1 ? "❌" : "💨";
                 return (
-                  <div key={shot.timestamp + i} className="flex items-center justify-between bg-gray-800/40 rounded px-2 py-1 text-[11px]">
+                  <div key={`${shot.timestamp}-${i}`} className="flex items-center justify-between bg-gray-800/40 rounded px-2 py-1 text-[11px]">
                     <span>{icon}</span>
                     <span className="text-gray-500">{parseFloat(shot.betAmount).toFixed(4)}</span>
                     <span className={`font-bold ${netVal >= 0 && shot.result !== -1 ? "text-green-400" : "text-red-400"}`}>{net}</span>
